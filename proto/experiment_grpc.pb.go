@@ -20,8 +20,9 @@ const _ = grpc.SupportPackageIsVersion9
 
 const (
 	ExperimentService_Connect_FullMethodName         = "/experiment.ExperimentService/Connect"
-	ExperimentService_GuessNumber_FullMethodName     = "/experiment.ExperimentService/GuessNumber"
 	ExperimentService_StartExperiment_FullMethodName = "/experiment.ExperimentService/StartExperiment"
+	ExperimentService_SendResponse_FullMethodName    = "/experiment.ExperimentService/SendResponse"
+	ExperimentService_WaitingList_FullMethodName     = "/experiment.ExperimentService/WaitingList"
 	ExperimentService_Leaderboard_FullMethodName     = "/experiment.ExperimentService/Leaderboard"
 )
 
@@ -29,9 +30,10 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type ExperimentServiceClient interface {
-	Connect(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[ConnectRequest, ServerMessage], error)
-	GuessNumber(ctx context.Context, in *GuessRequest, opts ...grpc.CallOption) (*GuessResponse, error)
+	Connect(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[ClientMessage, ServerMessage], error)
 	StartExperiment(ctx context.Context, in *StartRequest, opts ...grpc.CallOption) (*StartResponse, error)
+	SendResponse(ctx context.Context, in *SendResponseRequest, opts ...grpc.CallOption) (*SendResponseResponse, error)
+	WaitingList(ctx context.Context, in *WaitingListRequest, opts ...grpc.CallOption) (*WaitingListResponse, error)
 	Leaderboard(ctx context.Context, in *LeaderboardRequest, opts ...grpc.CallOption) (*LeaderboardResponse, error)
 }
 
@@ -43,33 +45,43 @@ func NewExperimentServiceClient(cc grpc.ClientConnInterface) ExperimentServiceCl
 	return &experimentServiceClient{cc}
 }
 
-func (c *experimentServiceClient) Connect(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[ConnectRequest, ServerMessage], error) {
+func (c *experimentServiceClient) Connect(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[ClientMessage, ServerMessage], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	stream, err := c.cc.NewStream(ctx, &ExperimentService_ServiceDesc.Streams[0], ExperimentService_Connect_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
-	x := &grpc.GenericClientStream[ConnectRequest, ServerMessage]{ClientStream: stream}
+	x := &grpc.GenericClientStream[ClientMessage, ServerMessage]{ClientStream: stream}
 	return x, nil
 }
 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
-type ExperimentService_ConnectClient = grpc.BidiStreamingClient[ConnectRequest, ServerMessage]
+type ExperimentService_ConnectClient = grpc.BidiStreamingClient[ClientMessage, ServerMessage]
 
-func (c *experimentServiceClient) GuessNumber(ctx context.Context, in *GuessRequest, opts ...grpc.CallOption) (*GuessResponse, error) {
+func (c *experimentServiceClient) StartExperiment(ctx context.Context, in *StartRequest, opts ...grpc.CallOption) (*StartResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(GuessResponse)
-	err := c.cc.Invoke(ctx, ExperimentService_GuessNumber_FullMethodName, in, out, cOpts...)
+	out := new(StartResponse)
+	err := c.cc.Invoke(ctx, ExperimentService_StartExperiment_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *experimentServiceClient) StartExperiment(ctx context.Context, in *StartRequest, opts ...grpc.CallOption) (*StartResponse, error) {
+func (c *experimentServiceClient) SendResponse(ctx context.Context, in *SendResponseRequest, opts ...grpc.CallOption) (*SendResponseResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(StartResponse)
-	err := c.cc.Invoke(ctx, ExperimentService_StartExperiment_FullMethodName, in, out, cOpts...)
+	out := new(SendResponseResponse)
+	err := c.cc.Invoke(ctx, ExperimentService_SendResponse_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *experimentServiceClient) WaitingList(ctx context.Context, in *WaitingListRequest, opts ...grpc.CallOption) (*WaitingListResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(WaitingListResponse)
+	err := c.cc.Invoke(ctx, ExperimentService_WaitingList_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -90,9 +102,10 @@ func (c *experimentServiceClient) Leaderboard(ctx context.Context, in *Leaderboa
 // All implementations must embed UnimplementedExperimentServiceServer
 // for forward compatibility.
 type ExperimentServiceServer interface {
-	Connect(grpc.BidiStreamingServer[ConnectRequest, ServerMessage]) error
-	GuessNumber(context.Context, *GuessRequest) (*GuessResponse, error)
+	Connect(grpc.BidiStreamingServer[ClientMessage, ServerMessage]) error
 	StartExperiment(context.Context, *StartRequest) (*StartResponse, error)
+	SendResponse(context.Context, *SendResponseRequest) (*SendResponseResponse, error)
+	WaitingList(context.Context, *WaitingListRequest) (*WaitingListResponse, error)
 	Leaderboard(context.Context, *LeaderboardRequest) (*LeaderboardResponse, error)
 	mustEmbedUnimplementedExperimentServiceServer()
 }
@@ -104,14 +117,17 @@ type ExperimentServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedExperimentServiceServer struct{}
 
-func (UnimplementedExperimentServiceServer) Connect(grpc.BidiStreamingServer[ConnectRequest, ServerMessage]) error {
+func (UnimplementedExperimentServiceServer) Connect(grpc.BidiStreamingServer[ClientMessage, ServerMessage]) error {
 	return status.Errorf(codes.Unimplemented, "method Connect not implemented")
-}
-func (UnimplementedExperimentServiceServer) GuessNumber(context.Context, *GuessRequest) (*GuessResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method GuessNumber not implemented")
 }
 func (UnimplementedExperimentServiceServer) StartExperiment(context.Context, *StartRequest) (*StartResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method StartExperiment not implemented")
+}
+func (UnimplementedExperimentServiceServer) SendResponse(context.Context, *SendResponseRequest) (*SendResponseResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SendResponse not implemented")
+}
+func (UnimplementedExperimentServiceServer) WaitingList(context.Context, *WaitingListRequest) (*WaitingListResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method WaitingList not implemented")
 }
 func (UnimplementedExperimentServiceServer) Leaderboard(context.Context, *LeaderboardRequest) (*LeaderboardResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Leaderboard not implemented")
@@ -138,29 +154,11 @@ func RegisterExperimentServiceServer(s grpc.ServiceRegistrar, srv ExperimentServ
 }
 
 func _ExperimentService_Connect_Handler(srv interface{}, stream grpc.ServerStream) error {
-	return srv.(ExperimentServiceServer).Connect(&grpc.GenericServerStream[ConnectRequest, ServerMessage]{ServerStream: stream})
+	return srv.(ExperimentServiceServer).Connect(&grpc.GenericServerStream[ClientMessage, ServerMessage]{ServerStream: stream})
 }
 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
-type ExperimentService_ConnectServer = grpc.BidiStreamingServer[ConnectRequest, ServerMessage]
-
-func _ExperimentService_GuessNumber_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(GuessRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(ExperimentServiceServer).GuessNumber(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: ExperimentService_GuessNumber_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ExperimentServiceServer).GuessNumber(ctx, req.(*GuessRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
+type ExperimentService_ConnectServer = grpc.BidiStreamingServer[ClientMessage, ServerMessage]
 
 func _ExperimentService_StartExperiment_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(StartRequest)
@@ -176,6 +174,42 @@ func _ExperimentService_StartExperiment_Handler(srv interface{}, ctx context.Con
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(ExperimentServiceServer).StartExperiment(ctx, req.(*StartRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ExperimentService_SendResponse_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SendResponseRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ExperimentServiceServer).SendResponse(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ExperimentService_SendResponse_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ExperimentServiceServer).SendResponse(ctx, req.(*SendResponseRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ExperimentService_WaitingList_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(WaitingListRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ExperimentServiceServer).WaitingList(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ExperimentService_WaitingList_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ExperimentServiceServer).WaitingList(ctx, req.(*WaitingListRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -206,12 +240,16 @@ var ExperimentService_ServiceDesc = grpc.ServiceDesc{
 	HandlerType: (*ExperimentServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
-			MethodName: "GuessNumber",
-			Handler:    _ExperimentService_GuessNumber_Handler,
-		},
-		{
 			MethodName: "StartExperiment",
 			Handler:    _ExperimentService_StartExperiment_Handler,
+		},
+		{
+			MethodName: "SendResponse",
+			Handler:    _ExperimentService_SendResponse_Handler,
+		},
+		{
+			MethodName: "WaitingList",
+			Handler:    _ExperimentService_WaitingList_Handler,
 		},
 		{
 			MethodName: "Leaderboard",

@@ -5,30 +5,11 @@ package experiment;
 option go_package = ".";
 
 service ExperimentService {
-    rpc Connect(stream ConnectRequest) returns (stream ServerMessage);
-    rpc GuessNumber(GuessRequest) returns (GuessResponse);
-    rpc StartExperiment(StartRequest) returns (StartResponse);
-    rpc Leaderboard(LeaderboardRequest) returns (LeaderboardResponse);
-}
-
-message ConnectRequest {
-    string username = 1;
-}
-
-message ServerMessage {
-    string message = 1;
-}
-
-message GuessRequest {
-    string username = 1;
-    int32 number = 2;
-}
-
-message GuessResponse {
-    string message = 1;
-    bool correct = 2;
-    int32 attempts = 3;
-    string hint = 4;
+    rpc Connect(stream ClientMessage) returns (stream ServerMessage); // Bidirectional stream
+    rpc StartExperiment(StartRequest) returns (StartResponse);        // Start the experiment and notify all clients
+    rpc SendResponse(SendResponseRequest) returns (SendResponseResponse); // Send response to a specific client
+    rpc WaitingList(WaitingListRequest) returns (WaitingListResponse);    // View the list of clients awaiting responses
+    rpc Leaderboard(LeaderboardRequest) returns (LeaderboardResponse);    // View the leaderboard
 }
 
 message StartRequest {}
@@ -37,10 +18,33 @@ message StartResponse {
     string message = 1;
 }
 
+message ClientMessage {
+    string username = 1; // Username of the client
+    int32 number = 2;    // The number guessed by the client
+}
+
+message ServerMessage {
+    string message = 1; // Message from the server (e.g., "Higher", "Lower", "Correct")
+}
+
+message SendResponseRequest {
+    string username = 1; // Username of the client
+}
+
+message SendResponseResponse {
+    string message = 1;
+}
+
+message WaitingListRequest {}
+
+message WaitingListResponse {
+    repeated string usernames = 1; // List of clients waiting for responses
+}
+
 message LeaderboardRequest {}
 
 message LeaderboardEntry {
-    string clientId = 1;
+    string username = 1;
     int32 attempts = 2;
 }
 

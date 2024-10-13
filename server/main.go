@@ -14,31 +14,31 @@ import (
 )
 
 type Client struct {
-	username   string
-	guesses    int
-	lastGuess  int
-	experiment bool
-	stream     pb.ExperimentService_ConnectServer // Store the stream to send messages to the client
+	username  string
+	guesses   int
+	lastGuess int32
+	stream    pb.ExperimentService_ConnectServer // Store the stream to send messages to the client
 }
 
 type Server struct {
 	pb.UnimplementedExperimentServiceServer
-	mu          sync.Mutex
-	clients     map[string]*Client // Map of usernames to clients
-	targetNum   int
-	experiment  bool
-	leaderboard map[string]int
+	mu               sync.Mutex
+	clients          map[string]*Client // Map of usernames to clients
+	targetNum        int
+	experiment       bool
+	leaderboard      map[string]int
+	pendingResponses map[string]int32 // Store guesses awaiting responses for each client
 }
 
 func NewExperimentServer() *Server {
 	return &Server{
-		clients:     make(map[string]*Client),
-		leaderboard: make(map[string]int),
-		experiment:  false,
+		clients:          make(map[string]*Client),
+		leaderboard:      make(map[string]int),
+		pendingResponses: make(map[string]int32), // Track pending guesses for each client
 	}
 }
 
-// Connect handles the bi-directional stream when a client connects
+// Connect handles bidirectional streaming between the server and client
 func (s *Server) Connect(stream pb.ExperimentService_ConnectServer) error {
 	// Receive the first message from the client containing the username
 	clientMsg, err := stream.Recv()
@@ -53,91 +53,113 @@ func (s *Server) Connect(stream pb.ExperimentService_ConnectServer) error {
 		return fmt.Errorf("username cannot be empty")
 	}
 
-	client := &Client{username: username, stream: stream, experiment: false}
+	client := &Client{username: username, stream: stream}
 	s.mu.Lock()
 	s.clients[username] = client
 	s.mu.Unlock()
 
 	log.Printf("Client '%s' connected", username)
 
-	// Listen for incoming messages (although we're not using further ClientMessage much)
+	// Listen for guesses from the client
 	for {
-		_, err := stream.Recv()
+		clientMsg, err := stream.Recv()
 		if err != nil {
-			log.Printf("Client '%s' disconnected", username)
-			s.mu.Lock()
-			delete(s.clients, username)
-			s.mu.Unlock()
+			log.Printf("Error receiving message from client '%s': %v", username, err)
 			break
 		}
+
+		// Process the client's guess but do not send an immediate response
+		s.processGuess(username, clientMsg.Number)
 	}
+
+	// Remove the client after disconnect
+	s.mu.Lock()
+	delete(s.clients, username)
+	s.mu.Unlock()
 
 	return nil
 }
 
-// StartExperiment broadcasts the start message to all connected clients
+// processGuess stores the guess for later response
+func (s *Server) processGuess(username string, guess int32) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	client, ok := s.clients[username]
+	if !ok {
+		log.Printf("Client '%s' not found", username)
+		return
+	}
+
+	client.guesses++
+	client.lastGuess = guess
+
+	// Store the guess in the pending responses map for manual response later
+	s.pendingResponses[username] = guess
+	log.Printf("Stored guess %d for client '%s' (pending response)", guess, username)
+}
+
+// StartExperiment sends a start message to all clients
 func (s *Server) StartExperiment(ctx context.Context, req *pb.StartRequest) (*pb.StartResponse, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Randomly choose a number to guess
+	// Generate a random number for the experiment
 	s.targetNum = rand.Intn(100) + 1
 	s.experiment = true
 	s.leaderboard = make(map[string]int)
+	log.Printf("Experiment started with number: %d", s.targetNum)
 
-	// Notify all connected clients about the start of the experiment
+	// Notify all clients about the start of the experiment
 	for _, client := range s.clients {
-		client.experiment = true
-		go func(c *Client) {
-			err := c.stream.Send(&pb.ServerMessage{
-				Message: "Experiment started! Guess a number between 1 and 100.",
-			})
-			if err != nil {
-				log.Printf("Failed to notify client '%s'", c.username)
-			}
-		}(client)
+		err := client.stream.Send(&pb.ServerMessage{
+			Message: "Experiment started! Guess a number between 1 and 100.",
+		})
+		if err != nil {
+			log.Printf("Error sending start message to client '%s': %v", client.username, err)
+		}
 	}
 
-	log.Printf("Experiment started with number: %d", s.targetNum)
 	return &pb.StartResponse{Message: "Experiment started!"}, nil
 }
 
-// GuessNumber handles incoming guesses from clients and returns a response
-func (s *Server) GuessNumber(ctx context.Context, req *pb.GuessRequest) (*pb.GuessResponse, error) {
+// SendResponse sends a response for the last guess of a specific client
+func (s *Server) SendResponse(ctx context.Context, req *pb.SendResponseRequest) (*pb.SendResponseResponse, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Find the client making the guess based on the username
 	client, ok := s.clients[req.Username]
 	if !ok {
 		return nil, fmt.Errorf("client '%s' not found", req.Username)
 	}
 
-	client.guesses++
-
-	var message string
-	var hint string
-	correct := false
-
-	if req.Number == int32(s.targetNum) {
-		message = "Correct!"
-		correct = true
-		s.leaderboard[req.Username] = client.guesses
-	} else if req.Number < int32(s.targetNum) {
-		message = "Higher!"
-		hint = "Higher"
-	} else {
-		message = "Lower!"
-		hint = "Lower"
+	// Get the stored guess for the client
+	guess, exists := s.pendingResponses[req.Username]
+	if !exists {
+		return nil, fmt.Errorf("no pending response for client '%s'", req.Username)
 	}
 
-	// Respond with the guess result
-	return &pb.GuessResponse{
-		Message:  message,
-		Correct:  correct,
-		Attempts: int32(client.guesses),
-		Hint:     hint,
-	}, nil
+	// Process the guess (manual response based on guess)
+	var message string
+	if guess == int32(s.targetNum) {
+		message = "Correct!"
+		s.leaderboard[req.Username] = client.guesses
+		delete(s.pendingResponses, req.Username)
+	} else if guess < int32(s.targetNum) {
+		message = "Higher!"
+	} else {
+		message = "Lower!"
+	}
+
+	// Send the response to the client
+	err := client.stream.Send(&pb.ServerMessage{Message: message})
+	if err != nil {
+		return nil, fmt.Errorf("failed to send message to client '%s': %v", req.Username, err)
+	}
+
+	log.Printf("Sent response to client '%s': %s", req.Username, message)
+
+	return &pb.SendResponseResponse{Message: "Response sent to client"}, nil
 }
 
 func main() {
