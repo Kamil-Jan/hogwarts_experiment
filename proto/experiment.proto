@@ -45,7 +45,7 @@ message LeaderboardRequest {}
 
 message LeaderboardEntry {
     string username = 1;
-    int32 attempts = 2;
+    int32 wins = 2;
 }
 
 message LeaderboardResponse {

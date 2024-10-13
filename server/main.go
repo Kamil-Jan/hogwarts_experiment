@@ -25,7 +25,6 @@ type Server struct {
 	mu               sync.Mutex
 	clients          map[string]*Client // Map of usernames to clients
 	targetNum        int
-	experiment       bool
 	leaderboard      map[string]int
 	pendingResponses map[string]int32 // Store guesses awaiting responses for each client
 }
@@ -56,6 +55,9 @@ func (s *Server) Connect(stream pb.ExperimentService_ConnectServer) error {
 	client := &Client{username: username, stream: stream}
 	s.mu.Lock()
 	s.clients[username] = client
+	if _, ok := s.leaderboard[username]; !ok {
+		s.leaderboard[username] = 0
+	}
 	s.mu.Unlock()
 
 	log.Printf("Client '%s' connected", username)
@@ -74,7 +76,7 @@ func (s *Server) Connect(stream pb.ExperimentService_ConnectServer) error {
 
 	// Remove the client after disconnect
 	s.mu.Lock()
-	delete(s.clients, username)
+	delete(s.pendingResponses, username)
 	s.mu.Unlock()
 
 	return nil
@@ -106,8 +108,6 @@ func (s *Server) StartExperiment(ctx context.Context, req *pb.StartRequest) (*pb
 
 	// Generate a random number for the experiment
 	s.targetNum = rand.Intn(100) + 1
-	s.experiment = true
-	s.leaderboard = make(map[string]int)
 	log.Printf("Experiment started with number: %d", s.targetNum)
 
 	// Notify all clients about the start of the experiment
@@ -143,7 +143,7 @@ func (s *Server) SendResponse(ctx context.Context, req *pb.SendResponseRequest) 
 	var message string
 	if guess == int32(s.targetNum) {
 		message = "Correct!"
-		s.leaderboard[req.Username] = client.guesses
+		s.leaderboard[req.Username] += 1
 		delete(s.pendingResponses, req.Username)
 	} else if guess < int32(s.targetNum) {
 		message = "Higher!"
@@ -160,6 +160,35 @@ func (s *Server) SendResponse(ctx context.Context, req *pb.SendResponseRequest) 
 	log.Printf("Sent response to client '%s': %s", req.Username, message)
 
 	return &pb.SendResponseResponse{Message: "Response sent to client"}, nil
+}
+
+// Leaderboard returns the current leaderboard
+func (s *Server) Leaderboard(ctx context.Context, req *pb.LeaderboardRequest) (*pb.LeaderboardResponse, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	entries := []*pb.LeaderboardEntry{}
+	for username, wins := range s.leaderboard {
+		entries = append(entries, &pb.LeaderboardEntry{
+			Username: username,
+			Wins:     int32(wins),
+		})
+	}
+
+	return &pb.LeaderboardResponse{Entries: entries}, nil
+}
+
+// WaitingList returns the list of clients who are waiting for a response
+func (s *Server) WaitingList(ctx context.Context, req *pb.WaitingListRequest) (*pb.WaitingListResponse, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	usernames := []string{}
+	for username := range s.pendingResponses {
+		usernames = append(usernames, username)
+	}
+
+	return &pb.WaitingListResponse{Usernames: usernames}, nil
 }
 
 func main() {

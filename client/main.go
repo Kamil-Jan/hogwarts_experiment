@@ -173,5 +173,9 @@ func main() {
 		}
 
 		fmt.Println("Waiting for response...")
+		msg := client.WaitForMessage()
+		if msg == "Correct!" {
+			break
+		}
 	}
 }
