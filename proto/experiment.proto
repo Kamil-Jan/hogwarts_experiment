@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package experiment;
 
-option go_package = "hogwarts-experiment/proto";
+option go_package = "github.com/Kamil-Jan/hogwarts_experiment/proto";
 
 // protoc --go_out=proto --go-grpc_out=proto proto/experiment.proto
 

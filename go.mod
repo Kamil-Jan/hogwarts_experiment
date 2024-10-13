@@ -1,4 +1,4 @@
-module hogwarts-experiment
+module github.com/Kamil-Jan/hogwarts-experiment
 
 go 1.22.5
 

@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"time"
 
-	pb "hogwarts_experiment/proto"
+	pb "github.com/Kamil-Jan/hogwarts_experiment/proto"
 
 	"google.golang.org/grpc"
 )

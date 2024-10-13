@@ -7,7 +7,7 @@ import (
 	"math/rand"
 	"sync"
 
-	pb "proto/hogwarts_experiment/"
+	pb "github.com/Kamil-Jan/hogwarts_experiment/proto"
 )
 
 // Client holds information about connected clients
