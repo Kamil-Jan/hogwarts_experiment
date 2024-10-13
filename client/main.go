@@ -18,15 +18,16 @@ import (
 
 // Client struct to encapsulate connection and stream
 type Client struct {
-	conn   *grpc.ClientConn
-	client pb.ExperimentServiceClient
-	stream pb.ExperimentService_ConnectClient
-	ctx    context.Context
-	cancel context.CancelFunc
+	conn     *grpc.ClientConn
+	client   pb.ExperimentServiceClient
+	stream   pb.ExperimentService_ConnectClient
+	ctx      context.Context
+	cancel   context.CancelFunc
+	username string
 }
 
-// NewClient initializes the client with a connection to the server
-func NewClient(serverAddr string) (*Client, error) {
+// NewClient initializes the client with a connection to the server and registers the username
+func NewClient(serverAddr, username string) (*Client, error) {
 	// Setup a gRPC connection
 	conn, err := grpc.Dial(serverAddr, grpc.WithInsecure())
 	if err != nil {
@@ -47,12 +48,21 @@ func NewClient(serverAddr string) (*Client, error) {
 		return nil, fmt.Errorf("failed to create stream: %w", err)
 	}
 
+	// Send the username to the server
+	err = stream.Send(&pb.ConnectRequest{Username: username})
+	if err != nil {
+		conn.Close()
+		cancel()
+		return nil, fmt.Errorf("failed to send username: %w", err)
+	}
+
 	return &Client{
-		conn:   conn,
-		client: client,
-		stream: stream,
-		ctx:    ctx,
-		cancel: cancel,
+		conn:     conn,
+		client:   client,
+		stream:   stream,
+		ctx:      ctx,
+		cancel:   cancel,
+		username: username,
 	}, nil
 }
 
@@ -86,7 +96,7 @@ func (c *Client) GuessNumber(guess int32) (*pb.GuessResponse, error) {
 	defer cancel()
 
 	// Make the GuessNumber RPC call
-	response, err := c.client.GuessNumber(ctx, &pb.GuessRequest{Number: guess})
+	response, err := c.client.GuessNumber(ctx, &pb.GuessRequest{Username: c.username, Number: guess})
 	if err != nil {
 		return nil, fmt.Errorf("error guessing number: %w", err)
 	}
@@ -133,11 +143,17 @@ func (c *Client) HandleUserInput(startSignal chan struct{}) {
 }
 
 func main() {
+	// Get the username from the user
+	reader := bufio.NewReader(os.Stdin)
+	fmt.Print("Enter your username: ")
+	username, _ := reader.ReadString('\n')
+	username = strings.TrimSpace(username)
+
 	// Address of the server
 	serverAddr := "localhost:50051"
 
-	// Initialize client
-	client, err := NewClient(serverAddr)
+	// Initialize client with the username
+	client, err := NewClient(serverAddr, username)
 	if err != nil {
 		log.Fatalf("Error initializing client: %v", err)
 	}

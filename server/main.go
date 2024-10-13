@@ -14,16 +14,17 @@ import (
 )
 
 type Client struct {
-	id         string
+	username   string
 	guesses    int
 	lastGuess  int
 	experiment bool
+	stream     pb.ExperimentService_ConnectServer // Store the stream to send messages to the client
 }
 
 type Server struct {
 	pb.UnimplementedExperimentServiceServer
 	mu          sync.Mutex
-	clients     map[string]*Client
+	clients     map[string]*Client // Map of usernames to clients
 	targetNum   int
 	experiment  bool
 	leaderboard map[string]int
@@ -37,22 +38,35 @@ func NewExperimentServer() *Server {
 	}
 }
 
+// Connect handles the bi-directional stream when a client connects
 func (s *Server) Connect(stream pb.ExperimentService_ConnectServer) error {
-	clientID := fmt.Sprintf("Client-%d", rand.Intn(1000))
-	log.Printf("Client %s connected", clientID)
+	// Receive the first message from the client containing the username
+	clientMsg, err := stream.Recv()
+	if err != nil {
+		log.Printf("Error receiving username: %v", err)
+		return err
+	}
 
-	// Register new client
+	// Register a new client with the provided username and stream
+	username := clientMsg.Username
+	if username == "" {
+		return fmt.Errorf("username cannot be empty")
+	}
+
+	client := &Client{username: username, stream: stream, experiment: false}
 	s.mu.Lock()
-	s.clients[clientID] = &Client{id: clientID}
+	s.clients[username] = client
 	s.mu.Unlock()
 
-	// Listen for incoming messages from the client (although we're not using ClientMessage much)
+	log.Printf("Client '%s' connected", username)
+
+	// Listen for incoming messages (although we're not using further ClientMessage much)
 	for {
 		_, err := stream.Recv()
 		if err != nil {
-			log.Printf("Client %s disconnected", clientID)
+			log.Printf("Client '%s' disconnected", username)
 			s.mu.Lock()
-			delete(s.clients, clientID)
+			delete(s.clients, username)
 			s.mu.Unlock()
 			break
 		}
@@ -61,20 +75,25 @@ func (s *Server) Connect(stream pb.ExperimentService_ConnectServer) error {
 	return nil
 }
 
+// StartExperiment broadcasts the start message to all connected clients
 func (s *Server) StartExperiment(ctx context.Context, req *pb.StartRequest) (*pb.StartResponse, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	// Randomly choose a number to guess
 	s.targetNum = rand.Intn(100) + 1
 	s.experiment = true
 	s.leaderboard = make(map[string]int)
 
+	// Notify all connected clients about the start of the experiment
 	for _, client := range s.clients {
 		client.experiment = true
 		go func(c *Client) {
-			err := s.notifyClient(c, "Experiment started! Guess a number between 1 and 100.")
+			err := c.stream.Send(&pb.ServerMessage{
+				Message: "Experiment started! Guess a number between 1 and 100.",
+			})
 			if err != nil {
-				log.Printf("Failed to notify client %s", c.id)
+				log.Printf("Failed to notify client '%s'", c.username)
 			}
 		}(client)
 	}
@@ -83,30 +102,16 @@ func (s *Server) StartExperiment(ctx context.Context, req *pb.StartRequest) (*pb
 	return &pb.StartResponse{Message: "Experiment started!"}, nil
 }
 
-func (s *Server) notifyClient(client *Client, message string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	stream, err := client.stream.Recv()
-	if err != nil {
-		return fmt.Errorf("error receiving stream: %v", err)
-	}
-
-	err = stream.Send(&pb.ServerMessage{Message: message})
-	if err != nil {
-		return fmt.Errorf("error sending message: %v", err)
-	}
-
-	return nil
-}
-
+// GuessNumber handles incoming guesses from clients and returns a response
 func (s *Server) GuessNumber(ctx context.Context, req *pb.GuessRequest) (*pb.GuessResponse, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Handle the guess
-	clientID := fmt.Sprintf("Client-%d", rand.Intn(1000)) // for now
-	client := s.clients[clientID]
+	// Find the client making the guess based on the username
+	client, ok := s.clients[req.Username]
+	if !ok {
+		return nil, fmt.Errorf("client '%s' not found", req.Username)
+	}
 
 	client.guesses++
 
@@ -117,7 +122,7 @@ func (s *Server) GuessNumber(ctx context.Context, req *pb.GuessRequest) (*pb.Gue
 	if req.Number == int32(s.targetNum) {
 		message = "Correct!"
 		correct = true
-		s.leaderboard[clientID] = client.guesses
+		s.leaderboard[req.Username] = client.guesses
 	} else if req.Number < int32(s.targetNum) {
 		message = "Higher!"
 		hint = "Higher"

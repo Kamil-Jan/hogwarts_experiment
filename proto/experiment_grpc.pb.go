@@ -29,7 +29,7 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type ExperimentServiceClient interface {
-	Connect(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[ClientMessage, ServerMessage], error)
+	Connect(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[ConnectRequest, ServerMessage], error)
 	GuessNumber(ctx context.Context, in *GuessRequest, opts ...grpc.CallOption) (*GuessResponse, error)
 	StartExperiment(ctx context.Context, in *StartRequest, opts ...grpc.CallOption) (*StartResponse, error)
 	Leaderboard(ctx context.Context, in *LeaderboardRequest, opts ...grpc.CallOption) (*LeaderboardResponse, error)
@@ -43,18 +43,18 @@ func NewExperimentServiceClient(cc grpc.ClientConnInterface) ExperimentServiceCl
 	return &experimentServiceClient{cc}
 }
 
-func (c *experimentServiceClient) Connect(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[ClientMessage, ServerMessage], error) {
+func (c *experimentServiceClient) Connect(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[ConnectRequest, ServerMessage], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	stream, err := c.cc.NewStream(ctx, &ExperimentService_ServiceDesc.Streams[0], ExperimentService_Connect_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
-	x := &grpc.GenericClientStream[ClientMessage, ServerMessage]{ClientStream: stream}
+	x := &grpc.GenericClientStream[ConnectRequest, ServerMessage]{ClientStream: stream}
 	return x, nil
 }
 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
-type ExperimentService_ConnectClient = grpc.BidiStreamingClient[ClientMessage, ServerMessage]
+type ExperimentService_ConnectClient = grpc.BidiStreamingClient[ConnectRequest, ServerMessage]
 
 func (c *experimentServiceClient) GuessNumber(ctx context.Context, in *GuessRequest, opts ...grpc.CallOption) (*GuessResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
@@ -90,7 +90,7 @@ func (c *experimentServiceClient) Leaderboard(ctx context.Context, in *Leaderboa
 // All implementations must embed UnimplementedExperimentServiceServer
 // for forward compatibility.
 type ExperimentServiceServer interface {
-	Connect(grpc.BidiStreamingServer[ClientMessage, ServerMessage]) error
+	Connect(grpc.BidiStreamingServer[ConnectRequest, ServerMessage]) error
 	GuessNumber(context.Context, *GuessRequest) (*GuessResponse, error)
 	StartExperiment(context.Context, *StartRequest) (*StartResponse, error)
 	Leaderboard(context.Context, *LeaderboardRequest) (*LeaderboardResponse, error)
@@ -104,7 +104,7 @@ type ExperimentServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedExperimentServiceServer struct{}
 
-func (UnimplementedExperimentServiceServer) Connect(grpc.BidiStreamingServer[ClientMessage, ServerMessage]) error {
+func (UnimplementedExperimentServiceServer) Connect(grpc.BidiStreamingServer[ConnectRequest, ServerMessage]) error {
 	return status.Errorf(codes.Unimplemented, "method Connect not implemented")
 }
 func (UnimplementedExperimentServiceServer) GuessNumber(context.Context, *GuessRequest) (*GuessResponse, error) {
@@ -138,11 +138,11 @@ func RegisterExperimentServiceServer(s grpc.ServiceRegistrar, srv ExperimentServ
 }
 
 func _ExperimentService_Connect_Handler(srv interface{}, stream grpc.ServerStream) error {
-	return srv.(ExperimentServiceServer).Connect(&grpc.GenericServerStream[ClientMessage, ServerMessage]{ServerStream: stream})
+	return srv.(ExperimentServiceServer).Connect(&grpc.GenericServerStream[ConnectRequest, ServerMessage]{ServerStream: stream})
 }
 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
-type ExperimentService_ConnectServer = grpc.BidiStreamingServer[ClientMessage, ServerMessage]
+type ExperimentService_ConnectServer = grpc.BidiStreamingServer[ConnectRequest, ServerMessage]
 
 func _ExperimentService_GuessNumber_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(GuessRequest)
