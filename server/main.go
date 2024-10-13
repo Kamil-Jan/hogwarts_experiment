@@ -10,18 +10,16 @@ import (
 
 	pb "github.com/Kamil-Jan/hogwarts_experiment/proto"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/reflection"
 )
 
-// Client holds information about connected clients
 type Client struct {
 	id         string
 	guesses    int
 	lastGuess  int
-	stream     pb.ExperimentService_ConnectServer
 	experiment bool
 }
 
-// Server holds the server's state
 type Server struct {
 	pb.UnimplementedExperimentServiceServer
 	mu          sync.Mutex
@@ -31,7 +29,6 @@ type Server struct {
 	leaderboard map[string]int
 }
 
-// NewExperimentServer initializes the server instance
 func NewExperimentServer() *Server {
 	return &Server{
 		clients:     make(map[string]*Client),
@@ -40,23 +37,18 @@ func NewExperimentServer() *Server {
 	}
 }
 
-// Connect allows clients to register and interact with the server
 func (s *Server) Connect(stream pb.ExperimentService_ConnectServer) error {
-	// Generate a unique ID for the client
 	clientID := fmt.Sprintf("Client-%d", rand.Intn(1000))
-
-	// Register the client
-	client := &Client{id: clientID, stream: stream, experiment: false}
-	s.mu.Lock()
-	s.clients[clientID] = client
-	s.mu.Unlock()
-
 	log.Printf("Client %s connected", clientID)
 
-	// Listen for guesses from the client
+	// Register new client
+	s.mu.Lock()
+	s.clients[clientID] = &Client{id: clientID}
+	s.mu.Unlock()
+
+	// Listen for incoming messages from the client (although we're not using ClientMessage much)
 	for {
-		// Receive a guess from the client
-		guessMsg, err := stream.Recv()
+		_, err := stream.Recv()
 		if err != nil {
 			log.Printf("Client %s disconnected", clientID)
 			s.mu.Lock()
@@ -64,97 +56,93 @@ func (s *Server) Connect(stream pb.ExperimentService_ConnectServer) error {
 			s.mu.Unlock()
 			break
 		}
-
-		// Process the guess
-		s.handleGuess(clientID, guessMsg.Number)
 	}
 
 	return nil
 }
 
-// StartExperiment starts a new experiment with a random number
 func (s *Server) StartExperiment(ctx context.Context, req *pb.StartRequest) (*pb.StartResponse, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Generate a new random number between 1 and 100
 	s.targetNum = rand.Intn(100) + 1
 	s.experiment = true
 	s.leaderboard = make(map[string]int)
 
-	// Notify all connected clients about the experiment
 	for _, client := range s.clients {
 		client.experiment = true
 		go func(c *Client) {
-			err := c.stream.Send(&pb.ServerMessage{
-				Message: "Experiment started! Guess a number between 1 and 100.",
-			})
+			err := s.notifyClient(c, "Experiment started! Guess a number between 1 and 100.")
 			if err != nil {
-				log.Printf("Failed to notify %s", c.id)
+				log.Printf("Failed to notify client %s", c.id)
 			}
 		}(client)
 	}
 
 	log.Printf("Experiment started with number: %d", s.targetNum)
-
 	return &pb.StartResponse{Message: "Experiment started!"}, nil
 }
 
-// handleGuess processes a guess from a client
-func (s *Server) handleGuess(clientID string, guess int32) {
+func (s *Server) notifyClient(client *Client, message string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	client := s.clients[clientID]
-	client.guesses++
-	client.lastGuess = int(guess)
-
-	response := &pb.ServerMessage{}
-
-	// Compare the guess with the target number
-	if guess == int32(s.targetNum) {
-		response.Message = "You guessed it!"
-		s.leaderboard[clientID] = client.guesses
-		client.experiment = false
-	} else if guess < int32(s.targetNum) {
-		response.Message = "Higher!"
-	} else {
-		response.Message = "Lower!"
-	}
-
-	// Send feedback to the client
-	err := client.stream.Send(response)
+	stream, err := client.stream.Recv()
 	if err != nil {
-		log.Printf("Failed to send response to %s", client.id)
+		return fmt.Errorf("error receiving stream: %v", err)
 	}
+
+	err = stream.Send(&pb.ServerMessage{Message: message})
+	if err != nil {
+		return fmt.Errorf("error sending message: %v", err)
+	}
+
+	return nil
 }
 
-// Leaderboard returns the current leaderboard
-func (s *Server) Leaderboard(ctx context.Context, req *pb.LeaderboardRequest) (*pb.LeaderboardResponse, error) {
+func (s *Server) GuessNumber(ctx context.Context, req *pb.GuessRequest) (*pb.GuessResponse, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Construct the leaderboard
-	leaderboard := []*pb.LeaderboardEntry{}
-	for id, attempts := range s.leaderboard {
-		leaderboard = append(leaderboard, &pb.LeaderboardEntry{
-			ClientId: id,
-			Attempts: int32(attempts),
-		})
+	// Handle the guess
+	clientID := fmt.Sprintf("Client-%d", rand.Intn(1000)) // for now
+	client := s.clients[clientID]
+
+	client.guesses++
+
+	var message string
+	var hint string
+	correct := false
+
+	if req.Number == int32(s.targetNum) {
+		message = "Correct!"
+		correct = true
+		s.leaderboard[clientID] = client.guesses
+	} else if req.Number < int32(s.targetNum) {
+		message = "Higher!"
+		hint = "Higher"
+	} else {
+		message = "Lower!"
+		hint = "Lower"
 	}
 
-	return &pb.LeaderboardResponse{Entries: leaderboard}, nil
+	// Respond with the guess result
+	return &pb.GuessResponse{
+		Message:  message,
+		Correct:  correct,
+		Attempts: int32(client.guesses),
+		Hint:     hint,
+	}, nil
 }
 
 func main() {
-	// Create a new gRPC server
 	grpcServer := grpc.NewServer()
 
-	// Initialize and register the experiment service server
-	server := NewExperimentServer() // Calls the function from server.go
+	server := NewExperimentServer()
 	pb.RegisterExperimentServiceServer(grpcServer, server)
 
-	// Start listening on port 50051
+	reflection.Register(grpcServer)
+
 	listener, err := net.Listen("tcp", ":50051")
 	if err != nil {
 		log.Fatalf("Failed to listen on port 50051: %v", err)

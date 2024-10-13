@@ -6,27 +6,34 @@ option go_package = ".";
 
 service ExperimentService {
     rpc Connect(stream ClientMessage) returns (stream ServerMessage);
+    rpc GuessNumber(GuessRequest) returns (GuessResponse);
     rpc StartExperiment(StartRequest) returns (StartResponse);
-    rpc GuessNumber(GuessRequest) returns (ServerMessage);
     rpc Leaderboard(LeaderboardRequest) returns (LeaderboardResponse);
 }
 
 message ClientMessage {
-    int32 number = 1;
+    string message = 1;
 }
 
 message ServerMessage {
     string message = 1;
 }
 
+message GuessRequest {
+    int32 number = 1;
+}
+
+message GuessResponse {
+    string message = 1;   // A message about the guess (e.g., "Correct!", "Higher!", "Lower!")
+    bool correct = 2;     // Whether the guess was correct
+    int32 attempts = 3;   // Number of attempts made by the client
+    string hint = 4;      // Hint: "Higher" or "Lower"
+}
+
 message StartRequest {}
 
 message StartResponse {
     string message = 1;
-}
-
-message GuessRequest {
-    int32 number = 1;
 }
 
 message LeaderboardRequest {}
