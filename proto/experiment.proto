@@ -1,0 +1,43 @@
+syntax = "proto3";
+
+package experiment;
+
+option go_package = "hogwarts-experiment/proto";
+
+// protoc --go_out=proto --go-grpc_out=proto proto/experiment.proto
+
+service ExperimentService {
+    rpc Connect(stream ClientMessage) returns (stream ServerMessage);
+    rpc StartExperiment(StartRequest) returns (StartResponse);
+    rpc GuessNumber(GuessRequest) returns (ServerMessage);
+    rpc Leaderboard(LeaderboardRequest) returns (LeaderboardResponse);
+}
+
+message ClientMessage {
+    int32 number = 1;
+}
+
+message ServerMessage {
+    string message = 1;
+}
+
+message StartRequest {}
+
+message StartResponse {
+    string message = 1;
+}
+
+message GuessRequest {
+    int32 number = 1;
+}
+
+message LeaderboardRequest {}
+
+message LeaderboardEntry {
+    string clientId = 1;
+    int32 attempts = 2;
+}
+
+message LeaderboardResponse {
+    repeated LeaderboardEntry entries = 1;
+}
