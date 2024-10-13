@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"math/rand"
 	"net"
@@ -25,6 +26,7 @@ type Server struct {
 	mu               sync.Mutex
 	clients          map[string]*Client // Map of usernames to clients
 	targetNum        int
+	experiment       bool
 	leaderboard      map[string]int
 	pendingResponses map[string]int32 // Store guesses awaiting responses for each client
 }
@@ -66,13 +68,17 @@ func (s *Server) Connect(stream pb.ExperimentService_ConnectServer) error {
 	for {
 		clientMsg, err := stream.Recv()
 		if err != nil {
-			log.Printf("Error receiving message from client '%s': %v", username, err)
+			if err != io.EOF {
+				log.Printf("Error receiving message from client '%s': %v", username, err)
+			}
 			break
 		}
 
 		// Process the client's guess but do not send an immediate response
 		s.processGuess(username, clientMsg.Number)
 	}
+
+	log.Printf("Client '%s' disconnected", username)
 
 	// Remove the client after disconnect
 	s.mu.Lock()
@@ -106,8 +112,13 @@ func (s *Server) StartExperiment(ctx context.Context, req *pb.StartRequest) (*pb
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	if s.experiment {
+		return nil, fmt.Errorf("experiment has already started")
+	}
+
 	// Generate a random number for the experiment
 	s.targetNum = rand.Intn(100) + 1
+	s.experiment = true
 	log.Printf("Experiment started with number: %d", s.targetNum)
 
 	// Notify all clients about the start of the experiment
@@ -121,6 +132,41 @@ func (s *Server) StartExperiment(ctx context.Context, req *pb.StartRequest) (*pb
 	}
 
 	return &pb.StartResponse{Message: "Experiment started!"}, nil
+}
+
+// EndExperiment ends the current experiment, notifies all clients, and optionally returns the final leaderboard
+func (s *Server) EndExperiment(ctx context.Context, req *pb.EndRequest) (*pb.EndResponse, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// Check if there is an active experiment
+	if !s.experiment {
+		return nil, fmt.Errorf("no active experiment to end")
+	}
+
+	// Notify all clients that the experiment is over
+	for _, client := range s.clients {
+		err := client.stream.Send(&pb.ServerMessage{
+			Message: "Experiment ended!",
+		})
+		if err != nil {
+			log.Printf("Failed to notify client '%s' about experiment end: %v", client.username, err)
+		}
+	}
+
+	// Clear experiment state
+	s.experiment = false
+	s.targetNum = 0
+	s.pendingResponses = make(map[string]int32) // Clear pending responses
+	log.Println("Experiment ended.")
+
+	// Optionally, return the final leaderboard to the admin
+	leaderboardMsg := "Final leaderboard:\n"
+	for username, attempts := range s.leaderboard {
+		leaderboardMsg += fmt.Sprintf("%s: %d attempts\n", username, attempts)
+	}
+
+	return &pb.EndResponse{Message: leaderboardMsg}, nil
 }
 
 // SendResponse sends a response for the last guess of a specific client
@@ -144,12 +190,12 @@ func (s *Server) SendResponse(ctx context.Context, req *pb.SendResponseRequest) 
 	if guess == int32(s.targetNum) {
 		message = "Correct!"
 		s.leaderboard[req.Username] += 1
-		delete(s.pendingResponses, req.Username)
 	} else if guess < int32(s.targetNum) {
 		message = "Higher!"
 	} else {
 		message = "Lower!"
 	}
+	delete(s.pendingResponses, req.Username)
 
 	// Send the response to the client
 	err := client.stream.Send(&pb.ServerMessage{Message: message})

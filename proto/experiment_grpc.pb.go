@@ -21,6 +21,7 @@ const _ = grpc.SupportPackageIsVersion9
 const (
 	ExperimentService_Connect_FullMethodName         = "/experiment.ExperimentService/Connect"
 	ExperimentService_StartExperiment_FullMethodName = "/experiment.ExperimentService/StartExperiment"
+	ExperimentService_EndExperiment_FullMethodName   = "/experiment.ExperimentService/EndExperiment"
 	ExperimentService_SendResponse_FullMethodName    = "/experiment.ExperimentService/SendResponse"
 	ExperimentService_WaitingList_FullMethodName     = "/experiment.ExperimentService/WaitingList"
 	ExperimentService_Leaderboard_FullMethodName     = "/experiment.ExperimentService/Leaderboard"
@@ -32,6 +33,7 @@ const (
 type ExperimentServiceClient interface {
 	Connect(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[ClientMessage, ServerMessage], error)
 	StartExperiment(ctx context.Context, in *StartRequest, opts ...grpc.CallOption) (*StartResponse, error)
+	EndExperiment(ctx context.Context, in *EndRequest, opts ...grpc.CallOption) (*EndResponse, error)
 	SendResponse(ctx context.Context, in *SendResponseRequest, opts ...grpc.CallOption) (*SendResponseResponse, error)
 	WaitingList(ctx context.Context, in *WaitingListRequest, opts ...grpc.CallOption) (*WaitingListResponse, error)
 	Leaderboard(ctx context.Context, in *LeaderboardRequest, opts ...grpc.CallOption) (*LeaderboardResponse, error)
@@ -62,6 +64,16 @@ func (c *experimentServiceClient) StartExperiment(ctx context.Context, in *Start
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(StartResponse)
 	err := c.cc.Invoke(ctx, ExperimentService_StartExperiment_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *experimentServiceClient) EndExperiment(ctx context.Context, in *EndRequest, opts ...grpc.CallOption) (*EndResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(EndResponse)
+	err := c.cc.Invoke(ctx, ExperimentService_EndExperiment_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -104,6 +116,7 @@ func (c *experimentServiceClient) Leaderboard(ctx context.Context, in *Leaderboa
 type ExperimentServiceServer interface {
 	Connect(grpc.BidiStreamingServer[ClientMessage, ServerMessage]) error
 	StartExperiment(context.Context, *StartRequest) (*StartResponse, error)
+	EndExperiment(context.Context, *EndRequest) (*EndResponse, error)
 	SendResponse(context.Context, *SendResponseRequest) (*SendResponseResponse, error)
 	WaitingList(context.Context, *WaitingListRequest) (*WaitingListResponse, error)
 	Leaderboard(context.Context, *LeaderboardRequest) (*LeaderboardResponse, error)
@@ -122,6 +135,9 @@ func (UnimplementedExperimentServiceServer) Connect(grpc.BidiStreamingServer[Cli
 }
 func (UnimplementedExperimentServiceServer) StartExperiment(context.Context, *StartRequest) (*StartResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method StartExperiment not implemented")
+}
+func (UnimplementedExperimentServiceServer) EndExperiment(context.Context, *EndRequest) (*EndResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method EndExperiment not implemented")
 }
 func (UnimplementedExperimentServiceServer) SendResponse(context.Context, *SendResponseRequest) (*SendResponseResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SendResponse not implemented")
@@ -174,6 +190,24 @@ func _ExperimentService_StartExperiment_Handler(srv interface{}, ctx context.Con
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(ExperimentServiceServer).StartExperiment(ctx, req.(*StartRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ExperimentService_EndExperiment_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(EndRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ExperimentServiceServer).EndExperiment(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ExperimentService_EndExperiment_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ExperimentServiceServer).EndExperiment(ctx, req.(*EndRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -242,6 +276,10 @@ var ExperimentService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "StartExperiment",
 			Handler:    _ExperimentService_StartExperiment_Handler,
+		},
+		{
+			MethodName: "EndExperiment",
+			Handler:    _ExperimentService_EndExperiment_Handler,
 		},
 		{
 			MethodName: "SendResponse",

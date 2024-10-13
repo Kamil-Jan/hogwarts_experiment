@@ -7,6 +7,7 @@ option go_package = ".";
 service ExperimentService {
     rpc Connect(stream ClientMessage) returns (stream ServerMessage); // Bidirectional stream
     rpc StartExperiment(StartRequest) returns (StartResponse);        // Start the experiment and notify all clients
+    rpc EndExperiment(EndRequest) returns (EndResponse);        // Start the experiment and notify all clients
     rpc SendResponse(SendResponseRequest) returns (SendResponseResponse); // Send response to a specific client
     rpc WaitingList(WaitingListRequest) returns (WaitingListResponse);    // View the list of clients awaiting responses
     rpc Leaderboard(LeaderboardRequest) returns (LeaderboardResponse);    // View the leaderboard
@@ -15,6 +16,12 @@ service ExperimentService {
 message StartRequest {}
 
 message StartResponse {
+    string message = 1;
+}
+
+message EndRequest {}
+
+message EndResponse {
     string message = 1;
 }
 

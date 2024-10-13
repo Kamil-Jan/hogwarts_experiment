@@ -155,6 +155,7 @@ func main() {
 	fmt.Println("Waiting for the experiment to start...")
 	client.WaitForStart()
 
+	guesses := make([]int, 0)
 	for {
 		fmt.Print("Enter your guess (1-100): ")
 		guessStr, _ := reader.ReadString('\n')
@@ -171,11 +172,15 @@ func main() {
 			log.Printf("Failed to send guess: %v", err)
 			break
 		}
+		guesses = append(guesses, guess)
 
 		fmt.Println("Waiting for response...")
 		msg := client.WaitForMessage()
-		if msg == "Correct!" {
+		if msg == "Correct!" || strings.Contains(msg, "Experiment started") {
+			fmt.Println("Experiment ended")
 			break
 		}
 	}
+
+	fmt.Println("My guesses: ", guesses)
 }
